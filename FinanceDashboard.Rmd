@@ -1,0 +1,626 @@
+---
+title: "Finance Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+pacman::p_load(
+  flexdashboard,
+  e1071,
+  splines,
+  ISLR2,
+  glmnet,
+  tidyverse,
+  DT
+)
+```
+
+# Naive Bayes Classification 
+
+Column {data-width=250}
+-----------------------------------------------------------------------
+
+### Summary
+
+In this section, we try to determine a company's sector. The data was sourced from Kaggle and contains metrics on the top 50 technology companies in the United States from 2022 to 2023.
+
+In order to accomplish this, a Naive Bayes Classifier will be used. The predictors will be the company's headquartered state, and name.
+
+From the boxplot of Sector vs HQ State, we can see how many companies of each sector are located in each state. Moreover, we can see the mean number of sectors within each state (black circle).
+
+From the model table, we can see the predictions for the first ten rows of our data set.
+
+Data located at: "https://drive.google.com/drive/u/1/folders/1CPGpK_lr7hphAXqfHryBMOwPnLsi5X29"
+
+```{r}
+nbdata <- read.csv(file = "C:\\Users\\O-Family\\Downloads\\Top 50 US Tech Companies 2022 - 2023.csv")
+
+data <- subset(nbdata, select = c(1, 3, 4, 6, 10))
+data$Sector <- as.factor(data$Sector)
+data$Company.Name <- as.factor(data$Company.Name)
+data$HQ.State <- as.factor(data$HQ.State)
+data$Annual.Revenue.2022.2023..USD.in.Billions. <- as.numeric(data$Annual.Revenue.2022.2023..USD.in.Billions.)
+data$Employee.Size <- as.numeric(data$Employee.Size)
+```
+
+### Data Overview
+#### Top 50 US Tech Compaines by Sector
+```{r}
+DT::datatable(nbdata, 
+              rownames = FALSE, 
+              options = list(pageLength = 5, scrollX = TRUE), 
+              class = 'white-space: nowrap' )
+```
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Sector vs HQ State Boxplot
+```{r}
+sec <- as.factor(data$Sector)
+hq <- as.numeric(data$HQ.State)
+plot(sec, hq,
+     pch=10,
+     col=c("red","green",'yellow', 'purple', 'blue', 'orange', 'white', 'brown'),
+     xlab="Sector", 
+     ylab="HQ State", 
+     main = "Sector vs HQ State")
+groupmeans <- aggregate(hq, list(sec), FUN=mean)
+points(groupmeans, pch = 16)
+```
+
+
+### Naive Bayes Model
+
+```{r}
+
+mod <- naiveBayes(Sector ~ Company.Name + HQ.State , data = data)
+
+pred <- data.frame(predict(mod, newdata = data, type = "raw")[1:10, ],
+"predicted_class" = predict(mod, newdata = data, type = "class")[1:10])
+
+DT::datatable(pred, 
+              rownames = FALSE, 
+              options = list(pageLength = 5, scrollX = TRUE), 
+              class = 'white-space: nowrap' )
+```
+
+# Natural Cubic Spline Fit
+
+Column {data-width=250}
+-----------------------------------------------------------------------
+
+### Summary
+
+In this section we try to find a relationship between the volume of the NASDAQ based on its close price.
+
+In order to accomplish this, a Natural Cubic Spline Fit will be used. 
+
+From the NASDAQ Close Price VS Volume plot we can see there is a clear non-linear relationship. As such, it is appropriate to use a cubic spline fit.
+
+From the model df 9 was used. As such, the interior knots for our data are 11012.61, 11384.49, 11790.35, 12658.73, 13660.73, 14133.88, 14664.27, 15183.36.
+
+Data located at: "https://drive.google.com/drive/u/1/folders/1CPGpK_lr7hphAXqfHryBMOwPnLsi5X29"
+
+
+```{r}
+st <- read.csv("IXIC.csv")
+```
+
+### Data Overview
+#### NASDAQ Stock Prices
+```{r}
+DT::datatable(st, 
+              rownames = FALSE, 
+              options = list(pageLength = 5, scrollX = TRUE), 
+              class = 'white-space: nowrap' )
+```
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### NASDAQ Close Price VS Volume Plot
+```{r}
+plot(st$Close, st$Volume,
+     pch=16,
+     xlab="Close Price", 
+     ylab="Index Volume", 
+     main = "NASDAQ Close Price VS Volume")
+```
+
+
+### Cubic Spline Fit Model
+
+```{r}
+agelims <- range(st$Close)
+age.grid <- seq(from = agelims[1], to = agelims[2])
+
+fit.cbsp.1 <- lm(Volume ~ ns(Close, df = 9), data = st)
+pred.cbsp.1 <- predict(fit.cbsp.1, newdata = data.frame(Close = age.grid), se = T)
+loc <- attributes(ns(st$Close, df = 9))$knots
+
+plot(Volume ~ Close, data = st, col = "gray", main = "NASDAQ Close Price VS Volume Cubic Spline Fit")
+lines(age.grid, pred.cbsp.1$fit, lwd = 2)
+lines(age.grid, pred.cbsp.1$fit + 2*pred.cbsp.1$se, lty = "dashed")
+lines(age.grid, pred.cbsp.1$fit - 2*pred.cbsp.1$se, lty = "dashed")
+abline(v = c(11012.61, 11384.49, 11790.35, 12658.73, 13660.73, 14133.88, 14664.27, 15183.36), lty = 2)
+```
+
+# Ridge Regression Fit
+
+Column {data-width=325}
+-----------------------------------------------------------------------
+
+### Summary
+
+In this section we try to find a relationship between the open, low, and high prices of the NASDAQ Index and the close price.
+
+In order to accomplish this, a ridge line regression fit will be used. As such, the regressors are Open, Low, and High prices of the day. In this case, we will use the same data used in the Natural Cubic Spline Fit section.
+
+From the NASDAQ Open, Low, and High Price VS Close Price plot we can see there is a clear linear relationship within the data. As such, it is appropriate to use a Ridge Regression Fit.
+
+From the model our best lambda value is 166.2234. As a result, our best model has a intercept of 453.1028822 and open coefficient of 0.2989628, close coefficient of 0.3325544, and a low coefficient of 0.3340766.
+
+Data located at: "https://drive.google.com/drive/u/1/folders/1CPGpK_lr7hphAXqfHryBMOwPnLsi5X29"
+
+```{r}
+st <- read.csv("IXIC.csv")
+```
+
+### Data Overview
+#### NASDAQ Stock Prices
+```{r}
+DT::datatable(st, 
+              rownames = FALSE, 
+              options = list(pageLength = 5, scrollX = TRUE), 
+              class = 'white-space: nowrap' )
+```
+
+
+Row {.tabset .tabset-fade}
+-------------------------------------
+### Open VS Close
+```{r}
+plot(st$Open, st$Close,
+     pch=16,
+     xlab="Open Price", 
+     ylab="Close Price", 
+     main = "NASDAQ Open Price VS Close")
+```
+
+### Low VS Close
+```{r}
+plot(st$Low, st$Close,
+     pch=16,
+     xlab="Low Price", 
+     ylab="Close Price", 
+     main = "NASDAQ Low Price VS Close")
+```
+
+### High VS Close
+```{r}
+plot(st$High, st$Close,
+     pch=16,
+     xlab="High Price", 
+     ylab="Close Price", 
+     main = "NASDAQ High Price VS Close")
+```
+
+### Best Lambda
+
+```{r}
+st <- read.csv(file = "C:\\Users\\O-Family\\Downloads\\IXIC.csv")
+y <- st$Close
+x <- data.matrix(st[, c('Open', 'High', 'Low')])
+cv_model <- cv.glmnet(x, y, alpha = 0)
+model <- cv.glmnet(x, y, alpha = 0)
+lambda <- cv_model$lambda.min
+plot(model) 
+```
+
+### Best Model Coefficients
+```{r}
+best_model <- glmnet(x, y, alpha = 0, lambda = lambda)
+model_coe <- coef(best_model)
+model_coe
+```
+# Histograms {data-navmenu="Multiple Linear Regression"}
+
+Column {data-width=250}
+-----------------------------------------------------------------------
+
+### Summary
+
+
+In this section we will try to predict the price of a closing NASDAQ stock using Multiple Linear Regression. First we will look at the frequencies of the opening and closing stock prices. 
+
+As you can see here, the most frequent closing price is around 11,250 and the most frequent opening price is 11,500 or 14,750. This is a good starting point for predicting the closed price. 
+
+--------------------------------------------------------------------
+
+### Data Overview
+#### NASDAQ Stock Prices
+```{r}
+stocks <- read.csv(file = "C:\\Users\\O-Family\\Downloads\\IXIC.csv")
+DT::datatable(stocks, 
+              rownames = FALSE, 
+              options = list(pageLength = 5, scrollX = TRUE), 
+              class = 'white-space: nowrap' )
+```
+
+Row {.tabset .tabset-fade}
+-------------------------------------
+
+
+### Histogram of Closing Price
+```{r}
+
+hist(stocks$Close, xlab = "Closing Price", main ="Histogram of Closing Price" )
+```
+
+### Histogram of Opening Price
+```{r}
+hist(stocks$Open, xlab = "Opening Price", main ="Histogram of Opening Price")
+```
+
+
+# Relationships Over Time {data-navmenu="Multiple Linear Regression"}
+
+
+Column {data-width=250}
+-----------------------------------------------------------------------
+
+### Summary
+
+Next we will look at a couple of relationships between volume of stocks and their closing prices over time. 
+
+As you can see, closing prices peaked  at the start of 2022 with a significant drop throughout the year, and are now slowly recovering. 
+The volume was volatile, peaking when the closing price was at its lowest. 
+
+-------------------------------------------------------
+
+### Data Overview
+#### NASDAQ Stock Prices
+```{r}
+stocks <- read.csv(file = "C:\\Users\\O-Family\\Downloads\\IXIC.csv")
+DT::datatable(stocks, 
+              rownames = FALSE, 
+              options = list(pageLength = 5, scrollX = TRUE), 
+              class = 'white-space: nowrap' )
+```
+
+Row {.tabset .tabset-fade}
+-------------------------------------
+
+### Closing Price vs Time
+
+```{r}
+stocks$Date <- as.Date(stocks$Date)
+plot(stocks$Date, stocks$Close, type = "l", xlab = "Date", ylab = "Close", main = "Closing Prices VS Time")
+```
+
+
+### Volume vs Time
+
+```{r}
+plot(stocks$Date, stocks$Volume, type = "l", xlab = "Date", ylab = "Volume", main = "Volume VS Time")
+```
+
+# Creating a Prediction {data-navmenu="Multiple Linear Regression"}
+
+Column {data-width=250}
+-----------------------------------------------------------------------
+
+### Summary
+
+Now we will try to make a prediction on the closing NASDAQ stock price over time.
+
+After training the data and creating an estimate table, we can create a prediction of the price over time.
+
+Our P values are all super small, so all of the variables work well. Our RMSE is 66.08, which means we are only $66 off with the prediction.  
+
+
+----------------------------------------------------------------------------------
+
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Time Series
+
+```{r}
+set.seed(123) 
+train_index <- floor(0.7 * nrow(stocks))
+train_data <- stocks[1:train_index,]
+test_data <- stocks[(train_index+1):nrow(stocks),]
+
+train_features <- train_data[, 1:5]
+test_features <- test_data[, 1:5]
+train_classes <- train_data$Close
+test_class <- test_data$Close
+
+
+modfit <- lm(Close ~ Open + High + Low + Volume + Date, data = train_data)
+
+predictions <- predict(modfit, newdata = test_data)
+mse <- mean((test_data$Close - predictions)^2)
+rmse <- sqrt(mse)
+
+
+
+
+results <- data.frame(Date = test_data$Date, Actual = test_data$Close, Predicted = predictions)
+
+ggplot(results, aes(x = Date)) +
+  geom_line(aes(y = Actual, color = "Actual")) +
+  geom_line(aes(y = Predicted, color = "Predicted")) +
+  xlab("Date") +
+  ylab("Price") +
+  ggtitle("Actual vs. Predicted Values Over Time") +
+  scale_color_manual(values = c("Actual" = "blue", "Predicted" = "red"))
+
+```
+
+Row {.tabset .tabset-fade}
+-------------------------------------
+
+
+
+### Prediction
+```{r}
+set.seed(123) 
+train_index <- floor(0.7 * nrow(stocks))
+train_data <- stocks[1:train_index,]
+test_data <- stocks[(train_index+1):nrow(stocks),]
+
+train_features <- train_data[, 1:5]
+test_features <- test_data[, 1:5]
+train_classes <- train_data$Close
+test_class <- test_data$Close
+
+
+modfit <- lm(Close ~ Open + High + Low + Volume + Date, data = train_data)
+
+
+predictions <- predict(modfit, newdata = test_data)
+mse <- mean((test_data$Close - predictions)^2)
+rmse <- sqrt(mse)
+
+summary(modfit)$coefficients
+
+
+```
+
+### Confidence Interval and RMSE
+```{r}
+confint(modfit, level = 0.95)
+
+cat("RMSE:", rmse)
+
+
+```
+
+# K-Nearest Neighbors
+
+Column {data-width=250}
+-----------------------------------------------------------------------
+
+### Summary
+
+Now we will look at K-Nearest Neighbors to see how it classifies stocks to trend up or down.
+
+After training the data, we can classify it and see if it will trend up or down based on the opening prices and the volume. Our accuracy is 70%, which is pretty decent.  
+
+------------------------
+
+
+### Data Overview
+#### NASDAQ Stock Prices
+```{r}
+stocks <- read.csv(file = "C:\\Users\\O-Family\\Downloads\\IXIC.csv")
+DT::datatable(stocks, 
+              rownames = FALSE, 
+              options = list(pageLength = 5, scrollX = TRUE), 
+              class = 'white-space: nowrap' )
+```
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+
+### kNN Prediction
+```{r}
+library(quantmod)
+library(class)
+library(ggplot2)
+
+
+
+stocks <- read.csv(file = "C:\\Users\\O-Family\\Downloads\\IXIC.csv")
+stocks$Date <- as.Date(stocks$Date)
+
+
+
+stocks$Target <- ifelse(stocks$Close > lag(stocks$Close), "Up", "Down")
+stocks <- na.omit(stocks)
+
+
+set.seed(123)
+train_index <- floor(0.7 * nrow(stocks))
+train_data <- stocks[1:train_index,]
+test_data <- stocks[(train_index+1):nrow(stocks),]
+
+train_features <- train_data[, 2:6]
+test_features <- test_data[, 2:6]
+train_classes <- train_data$Target
+test_classes <- test_data$Target
+
+knn_model <- knn(train = train_features, test = test_features, cl = train_classes, k = 5)
+knn_predictions <- as.factor(knn_model)
+
+
+
+
+
+results <- data.frame(test_data, knn_predictions)
+
+ggplot(results, aes(x = Volume, y = Open, color = factor(knn_predictions))) +
+  geom_point() +
+  xlab("Volume") +
+  ylab("Open Price") +
+  ggtitle("KNN Predictions for Stock Classification") +
+  scale_color_manual(name = "Class",
+                     values = c("Down" = "red", "Up" = "green"))
+
+```
+
+Column {data-width=250}
+-----------------------------------------------------------------------
+### Accuracy and Confusion Matrix
+```{r}
+confusion_matrix <- table(knn_predictions, test_data$Target)
+print(confusion_matrix)
+
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+print(paste0("Accuracy: ", round(accuracy * 100), "%"))
+
+
+```
+
+# Logistic Regression
+
+Column {data-width=250}
+-----------------------------------------------------------------------
+
+### Summary
+
+Now we will use Logistic Regression to determine if buying NASDAQ stock is a smart decision. We will train the data and classify the stocks into two categories: "Buy" and "Not Buy". After creating an estimate table we can create a ROC curve and then determine the probability that a NASDAQ stock should be bought. On the next tab, we have our confusion matrix to show the True and False positive and negatives. After the calculations, only 0.5% of stocks should be bought. NASDAQ has not been doing well recently and we should buy safer stocks at the moment. However, accuracy is only 55% which isn't the best either. 
+
+------------------------
+
+
+### Data Overview
+#### NASDAQ Stock Prices
+```{r}
+stocks <- read.csv(file = "C:\\Users\\O-Family\\Downloads\\IXIC.csv")
+DT::datatable(stocks, 
+              rownames = FALSE, 
+              options = list(pageLength = 5, scrollX = TRUE), 
+              class = 'white-space: nowrap' )
+```
+Row {.tabset .tabset-fade}
+-------------------------------------
+
+
+### LR Algorithm
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(ROCR)
+library(quantmod)
+
+# Define the sigmoid function
+sigmoid <- function(x) {
+  1 / (1 + exp(-x))
+}
+
+# Load the stock data
+stocks <- read.csv(file = "C:\\Users\\O-Family\\Downloads\\IXIC.csv")
+
+# Subset the data and create the label column
+stocks <- stocks[complete.cases(stocks),]
+stocks$Date <- as.Date(stocks$Date)
+stocks$Label <- ifelse(stocks$Close > lag(stocks$Close) & stocks$Volume > lag(stocks$Volume), 1, 0)
+
+# Split the data into training and test sets
+set.seed(123)
+train_index <- floor(0.7 * nrow(stocks))
+train_data <- stocks[1:train_index,]
+test_data <- stocks[(train_index+1):nrow(stocks),]
+
+# Fit the logistic regression model
+model <- glm(Label ~ Close + Volume, data = train_data, family = binomial)
+
+# Generate predicted probabilities for the test data
+probabilities <- predict(model, newdata = test_data, type = "response")
+
+# Convert the predicted probabilities to predicted labels
+predicted_labels <- ifelse(probabilities > 0.5, "Up", "Down")
+
+# Evaluate the model's performance using a confusion matrix
+actual_labels <- test_data$Label
+confusion_matrix <- table(Predicted = predicted_labels, Actual = actual_labels)
+
+# Calculate the AUC for the ROC curve
+roc_obj <- prediction(probabilities, test_data$Label)
+auc <- as.numeric(performance(roc_obj, "auc")@y.values)
+
+# Create the ROC curve plot
+ggplot(data = data.frame(fpr = roc_obj@fp[[1]]/(roc_obj@fp[[1]]+roc_obj@tn[[1]]),
+                         tpr = roc_obj@tp[[1]]/(roc_obj@tp[[1]]+roc_obj@fn[[1]]))) +
+  geom_line(aes(x = fpr, y = tpr)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  labs(title = "ROC Curve", x = "False Positive Rate", y = "True Positive Rate")
+
+
+
+
+```
+
+### Confusion Matrix
+```{r}
+
+# Predict the label for a new stock
+new_stock <- data.frame(Close = 180, Volume = 20000000)
+new_stock$Label <- sigmoid(coef(model)[1] + coef(model)[2] * new_stock$Close + coef(model)[3] * new_stock$Volume)
+
+# Load required packages
+library(ggplot2)
+library(reshape2)
+
+# Create the confusion matrix data frame
+conf_mat <- data.frame(
+  Actual = rep(c("Down", "Up"), each = 2),
+  Predicted = c("Down", "Up", "Down", "Up"),
+  Value = c(63, 24, 44, 20)
+)
+
+# Reshape the data for plotting
+conf_mat_melted <- melt(conf_mat, id.vars = c("Actual", "Predicted"))
+
+# Plot the confusion matrix as a heat map
+ggplot(conf_mat_melted, aes(x = Actual, y = Predicted, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = value), size = 14, color = "black") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  labs(x = "Actual", y = "Predicted", title = "Confusion Matrix") +
+  theme_minimal()
+
+
+```
+
+
+Column {data-width=250}
+-----------------------------------------------------------------------
+### Chance of Buying and Accuracy Values
+
+```{r}
+print(new_stock$Label)
+TP <- 63
+TN <- 20
+FP <- 44
+FN <- 24
+
+accuracy <- (TP + TN) / (TP + TN + FP + FN)
+precision <- TP / (TP + FP)
+recall <- TP / (TP + FN)
+
+# Print the results
+cat("Accuracy: ", round(accuracy, 3), "\n")
+cat("Precision: ", round(precision, 3), "\n")
+cat("Recall: ", round(recall, 3), "\n")
+
+```
